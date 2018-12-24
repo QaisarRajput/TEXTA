@@ -1,0 +1,17 @@
+Author : Qaisar Rajput , 86-Bscs-2011 , Department of Computer Science Gcu Lahore
+         Omar Aziz , 127-Bscs-2011 , Department of Computer Science Gcu Lahore
+
+Dependencies : 
+1. Python 2.7 installation
+2. Django 1.6 Installation
+3. NLTK 
+4. Wordnet 
+5. Eclipse (Python Integration)
+
+How to Execute:
+      install all of the above and their sub dependencies .
+    Run in Eclipse (as Django project). 
+    Go to browser and type 127.0.0.1:8000/ and enter
+
+For further Reference :
+Email on : qasi.swatcat@live.com  
