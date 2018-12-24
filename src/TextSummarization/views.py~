@@ -1,0 +1,208 @@
+from django.shortcuts import render_to_response,render
+from django.http import HttpResponseRedirect
+from django.contrib import auth
+from django.core.context_processors import csrf, request
+from django import forms 
+from django.db import models
+from django.core.urlresolvers import reverse
+from django.template import RequestContext
+
+
+import datetime
+from TextSummarization import Summarizer,Tag_it,build_dict,extras,tagger,Topic
+from Summarizer_R import get_summary
+from k_means_clustering import get_clusters
+from TextSummarization.settings import Mongo_Client
+
+db = Mongo_Client["Text_Analysis"]
+col = db["query"]
+
+class UplaodFile(forms.Form):
+    name = forms.CharField(max_length=100)
+    docfile = forms.FileField(help_text='make sure format of file is (.txt)')
+
+
+class Document(models.Model):
+    docfile = models.FileField(upload_to='docs/%Y_%m_%d/')
+    
+class DocumentForm(forms.Form):
+    docfile = forms.FileField(
+        label='Select a file',
+        help_text='make sure format of file is (.txt)'
+    )
+    no_tags = forms.IntegerField(label='No of Tags')
+    line_para = forms.IntegerField(label='Lines per Paragraph')
+    line_whole = forms.IntegerField(label='Lines per File')
+    Search_string = forms.CharField(label='Search String',max_length=100)
+    textarea = forms.CharField(widget=forms.Textarea(attrs={'placeholder': 'Enter the Text Here','class':'textbox','cols':'74','rows':'15'}))
+
+class ClusterForm(forms.Form):
+    docfile = forms.FileField(
+        label='Select a file',
+        help_text='make sure format of file is (.txt)'
+    )
+    no_cluster = forms.IntegerField(label='No of Clusters')
+    textarea = forms.CharField(widget=forms.Textarea(attrs={'placeholder': 'Enter the Text Here','class':'textbox','cols':'74','rows':'15'}))
+
+
+def uploaded_file(f):
+    return f.read()
+
+# def index(request):
+#     
+#     return render(request,'base.html',{})
+
+
+def intersection(request):
+    # Handle file upload
+    summary1 =''
+    text =''
+    try:
+        if request.method == 'POST':
+        
+            form = DocumentForm(request.POST, request.FILES)
+            
+            print "here"
+            print request.FILES['docfile']
+            newdoc = Document(docfile=request.FILES['docfile'])
+            text = uploaded_file(request.FILES['docfile'])
+    #         print text  
+            no_tags = request.POST.get('no_tags')
+            line_para = request.POST.get('line_para')
+            line_whole = request.POST.get('line_whole')
+            string = request.POST.get('Search_string')
+            
+            summary1 = Tag_it.Summarizerr(text, int(no_tags), int(line_whole), int(line_para), string)
+            
+            print summary1
+            
+            summary2 = get_summary(text, int(line_whole))
+            print summary2
+            # Redirect to the document list after POST
+            return render_to_response('intersection.html',{'form': form, "summary":summary1, "summary2":summary2,"file":text},context_instance=RequestContext(request))
+                                          
+        else:
+            form = DocumentForm() # A empty, unbound form
+    except Exception,e:
+            
+            return render_to_response('intersection.html',{'form': form, "summary":summary1,"file":"Please fill all the input boxes"},context_instance=RequestContext(request))
+   # Load documents for the list page
+    
+
+    # Render list page with the documents and the form
+    return render_to_response(
+        'intersection.html',
+        {'form': form,"summary":summary1,"file":text},
+        context_instance=RequestContext(request)
+    )
+from pymongo import MongoClient
+client = MongoClient()
+
+db = client["clusters"]   
+col = db['n_clusters']
+def clustering(request):
+    # Handle file upload
+    clusters =''
+    text =''
+    try:
+        if request.method == 'POST':
+        
+            form = ClusterForm(request.POST, request.FILES)
+            
+            print "here"
+            print request.FILES['docfile']
+            newdoc = Document(docfile=request.FILES['docfile'])
+            text = uploaded_file(request.FILES['docfile'])
+    #         print text  
+            n_clusters = request.POST.get('no_cluster')
+            clusters = get_clusters(text.split('\n'), int(n_clusters))
+            docs = col.find({},{'name':1})
+            docs = [doc['name'] for doc in docs]
+            print clusters
+            
+            # Redirect to the document list after POST
+            return render_to_response('clustering.html',{'form': form, "clusters":docs,"file":text},context_instance=RequestContext(request))
+                                          
+        else:
+            form = ClusterForm() # A empty, unbound form
+    except Exception,e:
+            print e
+            return render_to_response('clustering.html',{'form': form, "clusters":clusters,"file":"Please fill all the input boxes"},context_instance=RequestContext(request))
+   # Load documents for the list page
+    
+
+    # Render list page with the documents and the form
+    return render_to_response(
+        'clustering.html',
+        {'form': form,"clusters":clusters,"file":text},
+        context_instance=RequestContext(request)
+    )    
+
+def cluster_docs(request,cluster_name):
+    print cluster_name
+    doc = col.find_one({"name":cluster_name})
+    
+    return render_to_response(
+        'cluster_panel.html',
+        {"documents":doc["documents"],"cluster_name":cluster_name},
+        context_instance=RequestContext(request)
+    )    
+
+def index(request):
+    return render_to_response(
+        'base.html',
+        {},
+        context_instance=RequestContext(request)
+    )
+    
+def Twitter(request):
+    form = UplaodFile()
+    return render(request,
+        'Twitter.html',
+        {form:"form"}
+        
+    )
+    
+def upload_file(request):
+    try:
+        if request.method == 'POST':
+            
+            form = UplaodFile(request.POST, request.FILES)
+            db = Mongo_Client["Text_Analysis"]
+            col = db["query"]
+            print "here"
+            print request.FILES['docfile']
+            newdoc = Document(docfile=request.FILES['docfile'])
+            text = uploaded_file(request.FILES['docfile'])
+            name = request.POST.get('name')
+            today = datetime.date.today()
+            print name
+#             print text
+            if col.find({"query_name":name,"isFile":True}).count()==0:
+                print "i am here"
+                print today
+                try:
+                    col.insert({"query_name":name,"isFile":True,"tweet_count":1,"date_time":str(today),'processed':True})
+                except Exception,ex:
+                    print Exception
+                    print ex
+            else:
+                col.update({"query_name":name,"isFile":True},{"$inc":{"tweet_count":1}})
+            
+            db["tweet_data"].insert({"query_name":name,"isFile":True,"tweet":text})
+            
+            # Redirect to the document list after POST
+#             return render_to_response('Twitter.html',{'form': form,},context_instance=RequestContext(request))
+            return HttpResponseRedirect('/Twitter')                             
+        else:
+            form = UplaodFile() # A empty, unbound form
+    except Exception,e:
+            print e
+            return HttpResponseRedirect('/Twitter')
+    return HttpResponseRedirect('/Twitter')
+#     return render_to_response(
+#         'Twitter.html',
+#         {'form': form},
+#         context_instance=RequestContext(request)
+#     )    
+    
